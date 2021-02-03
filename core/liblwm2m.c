@@ -2,11 +2,11 @@
  *
  * Copyright (c) 2013, 2014 Intel Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License v2.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
  *
  * The Eclipse Public License is available at
- *    http://www.eclipse.org/legal/epl-v10.html
+ *    http://www.eclipse.org/legal/epl-v20.html
  * The Eclipse Distribution License is available at
  *    http://www.eclipse.org/org/documents/edl-v10.php.
  *
@@ -16,7 +16,7 @@
  *    Simon Bernard - Please refer to git log
  *    Toby Jaffey - Please refer to git log
  *    Pascal Rieux - Please refer to git log
- *
+ *    
  *******************************************************************************/
 
 /*
@@ -56,11 +56,6 @@
 
 #include <stdio.h>
 
-#ifdef SIERRA
-#include <lwm2mcore/lwm2mcore.h>
-#include "sessionManager.h"
-#endif
-
 
 lwm2m_context_t * lwm2m_init(void * userData)
 {
@@ -80,26 +75,16 @@ lwm2m_context_t * lwm2m_init(void * userData)
 }
 
 #ifdef LWM2M_CLIENT_MODE
-bool lwm2m_deregister(lwm2m_context_t * context)
+void lwm2m_deregister(lwm2m_context_t * context)
 {
-    bool result = true;
     lwm2m_server_t * server = context->serverList;
 
     LOG("Entering");
-    if (!server)
-    {
-        result = false;
-    }
-
     while (NULL != server)
     {
-        if (false == registration_deregister(context, server))
-        {
-            result = false;
-        }
+        registration_deregister(context, server);
         server = server->next;
     }
-    return result;
 }
 
 static void prv_deleteServer(lwm2m_server_t * serverP, void *userData)
@@ -113,12 +98,7 @@ static void prv_deleteServer(lwm2m_server_t * serverP, void *userData)
     {
         lwm2m_free(serverP->location);
     }
-#if SIERRA
-        coap_end_block1_stream(&serverP->block1Data, NULL, 0);
-        coap_end_block2_stream();
-#else
-        free_block1_buffer(serverP->block1Data);
-#endif
+    free_block1_buffer(serverP->block1Data);
     lwm2m_free(serverP);
 }
 
@@ -189,17 +169,14 @@ void prv_deleteTransactionList(lwm2m_context_t * context)
     }
 }
 
-bool lwm2m_close(lwm2m_context_t * contextP)
+void lwm2m_close(lwm2m_context_t * contextP)
 {
 #ifdef LWM2M_CLIENT_MODE
 
     LOG("Entering");
-#ifdef LWM2M_DEREGISTER
-    return lwm2m_deregister(contextP);
-#else
+    lwm2m_deregister(contextP);
     prv_deleteServerList(contextP);
     prv_deleteBootstrapServerList(contextP);
-    acl_free(contextP);
     prv_deleteObservedList(contextP);
     lwm2m_free(contextP->endpointName);
     if (contextP->msisdn != NULL)
@@ -210,57 +187,6 @@ bool lwm2m_close(lwm2m_context_t * contextP)
     {
         lwm2m_free(contextP->altPath);
     }
-#if SIERRA
-    lwm2m_end_push();
-#endif /* SIERRA */
-
-    prv_deleteTransactionList(contextP);
-    lwm2m_free(contextP);
-    return true;
-#endif /* !LWM2M_DEREGISTER */
-
-#endif /* LWM2M_CLIENT_MODE */
-
-#ifdef LWM2M_SERVER_MODE
-    while (NULL != contextP->clientList)
-    {
-        lwm2m_client_t * clientP;
-
-        clientP = contextP->clientList;
-        contextP->clientList = contextP->clientList->next;
-
-        registration_freeClient(clientP);
-    }
-    return true;
-#endif
-}
-
-void lwm2m_followClosure(lwm2m_context_t * contextP)
-{
-#ifdef LWM2M_CLIENT_MODE
-
-    LOG("Entering");
-    prv_deleteServerList(contextP);
-    prv_deleteBootstrapServerList(contextP);
-    acl_free(contextP);
-    prv_deleteObservedList(contextP);
-    lwm2m_free(contextP->endpointName);
-    if (contextP->msisdn != NULL)
-    {
-        lwm2m_free(contextP->msisdn);
-    }
-    if (contextP->altPath != NULL)
-    {
-        lwm2m_free(contextP->altPath);
-    }
-#if SIERRA
-    lwm2m_end_push();
-#endif
-
-    /* Notify that the connection is stopped */
-    smanager_SendSessionEvent(EVENT_SESSION, EVENT_STATUS_DONE_SUCCESS, contextP);
-    prv_deleteTransactionList(contextP);
-    lwm2m_free(contextP);
 
 #endif
 
@@ -276,10 +202,8 @@ void lwm2m_followClosure(lwm2m_context_t * contextP)
     }
 #endif
 
-#ifndef LWM2M_DEREGISTER
     prv_deleteTransactionList(contextP);
     lwm2m_free(contextP);
-#endif
 }
 
 #ifdef LWM2M_CLIENT_MODE
@@ -288,7 +212,6 @@ static int prv_refreshServerList(lwm2m_context_t * contextP)
     lwm2m_server_t * targetP;
     lwm2m_server_t * nextP;
 
-    LOG("Refreshing server list");
     // Remove all servers marked as dirty
     targetP = contextP->bootstrapServerList;
     contextP->bootstrapServerList = NULL;
@@ -298,13 +221,11 @@ static int prv_refreshServerList(lwm2m_context_t * contextP)
         targetP->next = NULL;
         if (!targetP->dirty)
         {
-            LOG_ARG("Adding BS server %d", targetP->shortID);
             targetP->status = STATE_DEREGISTERED;
             contextP->bootstrapServerList = (lwm2m_server_t *)LWM2M_LIST_ADD(contextP->bootstrapServerList, targetP);
         }
         else
         {
-            LOG_ARG("Deleting BS server %d", targetP->shortID);
             prv_deleteServer(targetP, contextP->userData);
         }
         targetP = nextP;
@@ -318,12 +239,10 @@ static int prv_refreshServerList(lwm2m_context_t * contextP)
         if (!targetP->dirty)
         {
             // TODO: Should we revert the status to STATE_DEREGISTERED ?
-            LOG_ARG("Adding DM server %d", targetP->shortID);
             contextP->serverList = (lwm2m_server_t *)LWM2M_LIST_ADD(contextP->serverList, targetP);
         }
         else
         {
-            LOG_ARG("Deleting DM server %d", targetP->shortID);
             prv_deleteServer(targetP, contextP->userData);
         }
         targetP = nextP;
@@ -342,20 +261,7 @@ int lwm2m_configure(lwm2m_context_t * contextP,
     int i;
     uint8_t found;
 
-#if SIERRA
-    LOG_ARG("endpointName: %s, numObject: %d", endpointName, numObject);
-    if (msisdn)
-    {
-        LOG_ARG("msisdn: %s", msisdn);
-    }
-    if (altPath)
-    {
-        LOG_ARG("altPath: %s", altPath);
-    }
-#else
     LOG_ARG("endpointName: \"%s\", msisdn: \"%s\", altPath: \"%s\", numObject: %d", endpointName, msisdn, altPath, numObject);
-#endif
-
     // This API can be called only once for now
     if (contextP->endpointName != NULL || contextP->objectList != NULL) return COAP_400_BAD_REQUEST;
 
@@ -411,9 +317,6 @@ int lwm2m_configure(lwm2m_context_t * contextP,
         contextP->objectList = (lwm2m_object_t *)LWM2M_LIST_ADD(contextP->objectList, objectList[i]);
     }
 
-    // Read ACL and store in RAM
-    acl_readObject(contextP);
-
     return COAP_NO_ERROR;
 }
 
@@ -431,7 +334,7 @@ int lwm2m_add_object(lwm2m_context_t * contextP,
 
     if (contextP->state == STATE_READY)
     {
-        return lwm2m_update_registration(contextP, 0, LWM2M_REG_UPDATE_OBJECT_LIST);
+        return lwm2m_update_registration(contextP, 0, true);
     }
 
     return COAP_NO_ERROR;
@@ -449,7 +352,7 @@ int lwm2m_remove_object(lwm2m_context_t * contextP,
 
     if (contextP->state == STATE_READY)
     {
-        return lwm2m_update_registration(contextP, 0, LWM2M_REG_UPDATE_OBJECT_LIST);
+        return lwm2m_update_registration(contextP, 0, true);
     }
 
     return 0;
@@ -462,16 +365,10 @@ int lwm2m_step(lwm2m_context_t * contextP,
                time_t * timeoutP)
 {
     time_t tv_sec;
-    int result;
 
     LOG_ARG("timeoutP: %" PRId64, *timeoutP);
     tv_sec = lwm2m_gettime();
-
-    if ((int32_t)tv_sec < 0)
-    {
-        return COAP_500_INTERNAL_SERVER_ERROR;
-    }
-
+    if (tv_sec < 0) return COAP_500_INTERNAL_SERVER_ERROR;
 
 #ifdef LWM2M_CLIENT_MODE
     LOG_ARG("State: %s", STR_STATE(contextP->state));
@@ -481,10 +378,7 @@ next_step:
     switch (contextP->state)
     {
     case STATE_INITIAL:
-        if (0 != prv_refreshServerList(contextP))
-        {
-            return COAP_503_SERVICE_UNAVAILABLE;
-        }
+        if (0 != prv_refreshServerList(contextP)) return COAP_503_SERVICE_UNAVAILABLE;
         if (contextP->serverList != NULL)
         {
             contextP->state = STATE_REGISTER_REQUIRED;
@@ -494,33 +388,20 @@ next_step:
             // Bootstrapping
             contextP->state = STATE_BOOTSTRAP_REQUIRED;
         }
-#if SIERRA
-        LOG_ARG ("STATE_INITIAL -> %s", STR_STATE(contextP->state));
-#endif
         goto next_step;
+        break;
 
     case STATE_BOOTSTRAP_REQUIRED:
 #ifdef LWM2M_BOOTSTRAP
         if (contextP->bootstrapServerList != NULL)
         {
-#if SIERRA
-            /* Notify that the device starts to bootstrap */
-            smanager_SendSessionEvent(EVENT_TYPE_BOOTSTRAP, EVENT_STATUS_STARTED, NULL);
-#endif
             bootstrap_start(contextP);
             contextP->state = STATE_BOOTSTRAPPING;
             bootstrap_step(contextP, tv_sec, timeoutP);
-#if SIERRA
-            LOG_ARG ("STATE_BOOTSTRAP_REQUIRED -> %s", STR_STATE(contextP->state));
-#endif
         }
         else
 #endif
         {
-#if SIERRA
-            /* Notify that the device fails to bootstrap */
-            smanager_SendSessionEvent(EVENT_TYPE_BOOTSTRAP, EVENT_STATUS_DONE_FAIL, NULL);
-#endif
             return COAP_503_SERVICE_UNAVAILABLE;
         }
         break;
@@ -530,21 +411,11 @@ next_step:
         switch (bootstrap_getStatus(contextP))
         {
         case STATE_BS_FINISHED:
-#if SIERRA
-            /* Notify that the bootstrap succeeds */
-            smanager_SendSessionEvent(EVENT_TYPE_BOOTSTRAP, EVENT_STATUS_DONE_SUCCESS, NULL);
-#endif
             contextP->state = STATE_INITIAL;
-#if SIERRA
-            LOG_ARG ("STATE_BOOTSTRAPPING -> %s", STR_STATE(contextP->state));
-#endif
             goto next_step;
+            break;
 
         case STATE_BS_FAILED:
-#if SIERRA
-            /* Notify that the device fails to bootstrap */
-            smanager_SendSessionEvent(EVENT_TYPE_BOOTSTRAP, EVENT_STATUS_DONE_FAIL, NULL);
-#endif
             return COAP_503_SERVICE_UNAVAILABLE;
 
         default:
@@ -555,27 +426,12 @@ next_step:
         break;
 #endif
     case STATE_REGISTER_REQUIRED:
-#if SIERRA
-        /* Notify that the device starts to register */
-        smanager_SendSessionEvent(EVENT_TYPE_REGISTRATION, EVENT_STATUS_STARTED, NULL);
-#endif
-        result = registration_start(contextP);
-#ifndef SIERRA
+    {
+        int result = registration_start(contextP, true);
         if (COAP_NO_ERROR != result) return result;
-#else /* SIERRA */
-        if (COAP_NO_ERROR != result)
-        {
-            /* Notify that the device fails to register */
-            smanager_SendSessionEvent(EVENT_TYPE_REGISTRATION, EVENT_STATUS_DONE_FAIL, NULL);
-            contextP->state = STATE_BOOTSTRAP_REQUIRED;
-            goto next_step;
-        }
-#endif
         contextP->state = STATE_REGISTERING;
-#if SIERRA
-        LOG_ARG ("STATE_REGISTER_REQUIRED -> %s", STR_STATE(contextP->state));
-#endif
-        break;
+    }
+    break;
 
     case STATE_REGISTERING:
     {
@@ -585,27 +441,11 @@ next_step:
             contextP->state = STATE_READY;
             break;
 
-#if SIERRA
-        /* This case happens when an UPDATE request is rejected by the server due to a lifetime
-           expiry. In this case, the client needs to perform a full REGISTER request.
-           That's why the state is changed to STATE_INITIAL */
-        case STATE_REG_UPDATE_FAILED:
-            contextP->state = STATE_INITIAL;
-            goto next_step;
-#endif
-
         case STATE_REG_FAILED:
-#if SIERRA
-            /* Notify that the device can not register */
-            smanager_SendSessionEvent(EVENT_TYPE_REGISTRATION, EVENT_STATUS_DONE_FAIL, NULL);
-#endif
-
             // TODO avoid infinite loop by checking the bootstrap info is different
             contextP->state = STATE_BOOTSTRAP_REQUIRED;
-#if SIERRA
-            LOG_ARG ("STATE_REG_FAILED -> %s", STR_STATE(contextP->state));
-#endif
             goto next_step;
+            break;
 
         case STATE_REG_PENDING:
         default:
@@ -616,27 +456,12 @@ next_step:
     break;
 
     case STATE_READY:
+        if (registration_getStatus(contextP) == STATE_REG_FAILED)
         {
-            lwm2m_status_t status = registration_getStatus(contextP);
-            if (status == STATE_REG_FAILED)
-            {
-                // TODO avoid infinite loop by checking the bootstrap info is different
-                contextP->state = STATE_BOOTSTRAP_REQUIRED;
-#if SIERRA
-                LOG_ARG ("STATE_READY -> %s", STR_STATE(contextP->state));
-#endif
-                goto next_step;
-            }
-#if SIERRA
-            /* This case happens when an UPDATE request is rejected by the server due to a lifetime
-               expiry. In this case, the client needs to perform a full REGISTER request.
-               That's why the state is changed to STATE_INITIAL */
-            else if (status == STATE_REG_UPDATE_FAILED)
-            {
-                contextP->state = STATE_INITIAL;
-                goto next_step;
-            }
-#endif
+            // TODO avoid infinite loop by checking the bootstrap info is different
+            contextP->state = STATE_BOOTSTRAP_REQUIRED;
+            goto next_step;
+            break;
         }
         break;
 

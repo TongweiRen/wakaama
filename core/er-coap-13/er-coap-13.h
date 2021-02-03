@@ -50,7 +50,7 @@
  * Larger data must be handled by the resource and will be sent chunk-wise through a TCP stream or CoAP blocks.
  */
 #ifndef REST_MAX_CHUNK_SIZE
-#define REST_MAX_CHUNK_SIZE     1024
+#define REST_MAX_CHUNK_SIZE     128
 #endif
 
 #define COAP_DEFAULT_MAX_AGE                 60
@@ -258,7 +258,7 @@ typedef struct {
   multi_option_t *uri_query;
   uint8_t if_none_match;
 
-  uint32_t payload_len;
+  uint16_t payload_len;
   uint8_t *payload;
 
 } coap_packet_t;
@@ -359,7 +359,7 @@ int coap_set_header_if_match(void *packet, const uint8_t *etag, size_t etag_len)
 int coap_get_header_if_none_match(void *packet);
 int coap_set_header_if_none_match(void *packet);
 
-int coap_get_header_token(void *packet, const uint8_t **token);
+int coap_get_header_token(void *packet, uint8_t **token);
 int coap_set_header_token(void *packet, const uint8_t *token, size_t token_len);
 
 int coap_get_header_proxy_uri(void *packet, const char **uri); /* In-place string might not be 0-terminated. */

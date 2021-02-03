@@ -2,11 +2,11 @@
  *
  * Copyright (c) 2016 Intel Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License v2.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
  *
  * The Eclipse Public License is available at
- *    http://www.eclipse.org/legal/epl-v10.html
+ *    http://www.eclipse.org/legal/epl-v20.html
  * The Eclipse Distribution License is available at
  *    http://www.eclipse.org/org/documents/edl-v10.php.
  *
@@ -45,6 +45,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+
+// the maximum payload transferred by block1 we accumulate per server
+#define MAX_BLOCK1_SIZE 4096
 
 uint8_t coap_block1_handler(lwm2m_block1_data_t ** pBlock1Data,
                             uint16_t mid,
@@ -104,7 +107,7 @@ uint8_t coap_block1_handler(lwm2m_block1_data_t ** pBlock1Data,
           }
 
           // is it too large?
-          if (block1Data->block1bufferSize + length >= COAP_BLOCK1_SIZE) {
+          if (block1Data->block1bufferSize + length >= MAX_BLOCK1_SIZE) {
               return COAP_413_ENTITY_TOO_LARGE;
           }
           // re-alloc new buffer
@@ -122,7 +125,7 @@ uint8_t coap_block1_handler(lwm2m_block1_data_t ** pBlock1Data,
 
     if (blockMore)
     {
-        *outputLength = (size_t)-1;
+        *outputLength = -1;
         return COAP_231_CONTINUE;
     }
     else

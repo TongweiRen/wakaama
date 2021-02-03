@@ -2,11 +2,11 @@
  *
  * Copyright (c) 2013, 2014 Intel Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License v2.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
  *
  * The Eclipse Public License is available at
- *    http://www.eclipse.org/legal/epl-v10.html
+ *    http://www.eclipse.org/legal/epl-v20.html
  * The Eclipse Distribution License is available at
  *    http://www.eclipse.org/org/documents/edl-v10.php.
  *
@@ -16,7 +16,7 @@
  *    Toby Jaffey - Please refer to git log
  *    Bosch Software Innovations GmbH - Please refer to git log
  *    Pascal Rieux - Please refer to git log
- *
+ *    
  *******************************************************************************/
 /*
  Copyright (c) 2013, 2014 Intel Corporation
@@ -193,12 +193,7 @@ uint8_t dm_handleRequest(lwm2m_context_t * contextP,
         return COAP_IGNORE;
     }
 
-    // Check Access Control
-    if (!acl_checkAccess(contextP, uriP, serverP, message))
-    {
-        LOG("Command refused by ACL configuration");
-        return COAP_401_UNAUTHORIZED;
-    }
+    // TODO: check ACL
 
     switch (message->code)
     {
@@ -221,7 +216,7 @@ uint8_t dm_handleRequest(lwm2m_context_t * contextP,
                     {
                         if (IS_OPTION(message, COAP_OPTION_ACCEPT))
                         {
-                            format = utils_convertMediaType((coap_content_type_t)message->accept[0]);
+                            format = utils_convertMediaType(message->accept[0]);
                         }
                         else
                         {
@@ -253,7 +248,7 @@ uint8_t dm_handleRequest(lwm2m_context_t * contextP,
             {
                 if (IS_OPTION(message, COAP_OPTION_ACCEPT))
                 {
-                    format = utils_convertMediaType((coap_content_type_t)message->accept[0]);
+                    format = utils_convertMediaType(message->accept[0]);
                 }
 
                 result = object_read(contextP, uriP, &format, &buffer, &length);
@@ -280,10 +275,8 @@ uint8_t dm_handleRequest(lwm2m_context_t * contextP,
                 {
                     //longest uri is /65535/65535 = 12 + 1 (null) chars
                     char location_path[13] = "";
-                    lwm2m_object_t * targetP;
-
                     //instanceId expected
-                    if ((uriP->flag & LWM2M_URI_FLAG_INSTANCE_ID) == 0)
+                    if (!LWM2M_URI_IS_SET_INSTANCE(uriP))
                     {
                         result = COAP_500_INTERNAL_SERVER_ERROR;
                         break;
@@ -296,66 +289,7 @@ uint8_t dm_handleRequest(lwm2m_context_t * contextP,
                     }
                     coap_set_header_location_path(response, location_path);
 
-                    // Create an object instance in object 2 (ACL) for the created object instance
-                    targetP = (lwm2m_object_t *)LWM2M_LIST_FIND(contextP->objectList,
-                                                                LWM2M_ACL_OBJECT_ID);
-
-                    // Check if the object is registered
-                    // Check if the create callback is filled
-                    // Check that the instance list is not NULL (in this case, ACL is not used)
-                    if (targetP && (targetP->createFunc) && (targetP->instanceList))
-                    {
-                        uint16_t aclInstanceId = lwm2m_list_newId(targetP->instanceList);
-                        lwm2m_data_t * dataP = NULL;
-
-                        dataP = lwm2m_data_new(1);
-                        if(!dataP) return COAP_500_INTERNAL_SERVER_ERROR;
-
-                        dataP[0].type = LWM2M_TYPE_OBJECT_INSTANCE;
-                        dataP[0].id = aclInstanceId;
-                        dataP[0].value.asChildren.count = 4;
-
-                        dataP[0].value.asChildren.array = lwm2m_data_new(4);
-
-                        // Resource 0: Object Id
-                        dataP[0].value.asChildren.array[LWM2M_ACL_OBJECTID_ID].id = LWM2M_ACL_OBJECTID_ID;
-                        dataP[0].value.asChildren.array[LWM2M_ACL_OBJECTID_ID].type = LWM2M_TYPE_INTEGER;
-                        dataP[0].value.asChildren.array[LWM2M_ACL_OBJECTID_ID].value.asInteger = (int64_t)(uriP->objectId);
-
-                        // Resource 1: Object instance id
-                        dataP[0].value.asChildren.array[LWM2M_ACL_OBJECT_INSTANCE_ID].id = LWM2M_ACL_OBJECT_INSTANCE_ID;
-                        dataP[0].value.asChildren.array[LWM2M_ACL_OBJECT_INSTANCE_ID].type = LWM2M_TYPE_INTEGER;
-                        dataP[0].value.asChildren.array[LWM2M_ACL_OBJECT_INSTANCE_ID].value.asInteger = (int64_t)(uriP->instanceId);
-
-                        // Resource 2: ACL
-                        dataP[0].value.asChildren.array[LWM2M_ACL_ACCESS_ID].type = LWM2M_TYPE_MULTIPLE_RESOURCE;
-                        dataP[0].value.asChildren.array[LWM2M_ACL_ACCESS_ID].id = LWM2M_ACL_ACCESS_ID;
-                        dataP[0].value.asChildren.array[LWM2M_ACL_ACCESS_ID].value.asChildren.count = 1;
-                        dataP[0].value.asChildren.array[LWM2M_ACL_ACCESS_ID].value.asChildren.array = lwm2m_data_new(1);
-                        dataP[0].value.asChildren.array[LWM2M_ACL_ACCESS_ID].value.asChildren.array[0].type = LWM2M_TYPE_INTEGER;
-                        dataP[0].value.asChildren.array[LWM2M_ACL_ACCESS_ID].value.asChildren.array[0].id = serverP->shortID;
-                        dataP[0].value.asChildren.array[LWM2M_ACL_ACCESS_ID].value.asChildren.array[0].value.asInteger = LWM2M_ACL_R_RIGHTS
-                                                                                                                       | LWM2M_ACL_W_RIGHTS
-                                                                                                                       | LWM2M_ACL_E_RIGHTS
-                                                                                                                       | LWM2M_ACL_D_RIGHTS;
-
-                        // Resource 3: ACL owner
-                        dataP[0].value.asChildren.array[LWM2M_ACL_OWNER_ID].id = LWM2M_ACL_OWNER_ID;
-                        dataP[0].value.asChildren.array[LWM2M_ACL_OWNER_ID].type = LWM2M_TYPE_INTEGER;
-                        dataP[0].value.asChildren.array[LWM2M_ACL_OWNER_ID].value.asInteger = (int64_t)(serverP->shortID);
-
-                        if (COAP_201_CREATED == targetP->createFunc(aclInstanceId,
-                                                                    dataP[0].value.asChildren.count,
-                                                                    dataP[0].value.asChildren.array,
-                                                                    targetP))
-                        {
-                            // Add ACL data in list
-                            acl_addObjectInstance(contextP, dataP[0]);
-                        }
-                        lwm2m_data_free(1, dataP);
-                    }
-
-                    lwm2m_update_registration(contextP, 0, LWM2M_REG_UPDATE_OBJECT_LIST);
+                    lwm2m_update_registration(contextP, 0, true);
                 }
             }
             else if (!LWM2M_URI_IS_SET_RESOURCE(uriP))
@@ -406,23 +340,7 @@ uint8_t dm_handleRequest(lwm2m_context_t * contextP,
                 result = object_delete(contextP, uriP);
                 if (result == COAP_202_DELETED)
                 {
-                    // Remove any corresponding ACL object instance
-                    lwm2m_object_t * targetP = (lwm2m_object_t *)LWM2M_LIST_FIND(contextP->objectList,
-                                                                                 LWM2M_ACL_OBJECT_ID);
-                    if ((targetP) && (targetP->deleteFunc))
-                    {
-                        bool deleteResult = true;
-                        // Delete all object instances in object 2 which concerns the object
-                        // instance which was deleted
-                        while (deleteResult)
-                        {
-                            deleteResult = acl_deleteRelatedObjectInstance(contextP,
-                                                                           uriP->objectId,
-                                                                           uriP->instanceId);
-                        }
-                    }
-
-                    lwm2m_update_registration(contextP, 0, LWM2M_REG_UPDATE_OBJECT_LIST);
+                    lwm2m_update_registration(contextP, 0, true);
                 }
             }
         }
@@ -442,10 +360,13 @@ uint8_t dm_handleRequest(lwm2m_context_t * contextP,
 
 #define ID_AS_STRING_MAX_LEN 8
 
-static void prv_resultCallback(lwm2m_transaction_t * transacP,
+static void prv_resultCallback(lwm2m_context_t * contextP,
+                               lwm2m_transaction_t * transacP,
                                void * message)
 {
     dm_data_t * dataP = (dm_data_t *)transacP->userData;
+
+    (void)contextP; /* unused */
 
     if (message == NULL)
     {
@@ -481,9 +402,17 @@ static void prv_resultCallback(lwm2m_transaction_t * transacP,
                 lwm2m_free(locationString);
                 return;
             }
+            if (!LWM2M_URI_IS_SET_OBJECT(&locationUri) ||
+                !LWM2M_URI_IS_SET_INSTANCE(&locationUri) ||
+                LWM2M_URI_IS_SET_RESOURCE(&locationUri) ||
+                locationUri.objectId != ((dm_data_t*)transacP->userData)->uri.objectId)
+            {
+                LOG("Error: invalid Location_path option in prv_resultCallback()");
+                lwm2m_free(locationString);
+                return;
+            }
 
-            ((dm_data_t*)transacP->userData)->uri.instanceId = locationUri.instanceId;
-            ((dm_data_t*)transacP->userData)->uri.flag = locationUri.flag;
+            memcpy(&((dm_data_t*)transacP->userData)->uri, &locationUri, sizeof(locationUri));
 
             lwm2m_free(locationString);
         }
@@ -559,7 +488,6 @@ int lwm2m_dm_read(lwm2m_context_t * contextP,
                   void * userData)
 {
     lwm2m_client_t * clientP;
-    lwm2m_media_type_t format;
 
     LOG_ARG("clientID: %d", clientID);
     LOG_URI(uriP);
@@ -567,18 +495,9 @@ int lwm2m_dm_read(lwm2m_context_t * contextP,
     clientP = (lwm2m_client_t *)lwm2m_list_find((lwm2m_list_t *)contextP->clientList, clientID);
     if (clientP == NULL) return COAP_404_NOT_FOUND;
 
-    if (clientP->supportJSON == true)
-    {
-        format = LWM2M_CONTENT_JSON;
-    }
-    else
-    {
-        format = LWM2M_CONTENT_TLV;
-    }
-
     return prv_makeOperation(contextP, clientID, uriP,
                              COAP_GET,
-                             format,
+                             clientP->format,
                              NULL, 0,
                              callback, userData);
 }

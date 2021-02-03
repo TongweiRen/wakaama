@@ -2,11 +2,11 @@
  *
  * Copyright (c) 2015 Sierra Wireless and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License v2.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
  *
  * The Eclipse Public License is available at
- *    http://www.eclipse.org/legal/epl-v10.html
+ *    http://www.eclipse.org/legal/epl-v20.html
  * The Eclipse Distribution License is available at
  *    http://www.eclipse.org/org/documents/edl-v10.php.
  *
@@ -22,11 +22,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-
-#if SIERRA
-#include <lwm2mcore/lwm2mcore.h>
-#include "sessionManager.h"
-#endif
 
 #ifdef LWM2M_CLIENT_MODE
 #ifdef LWM2M_BOOTSTRAP
@@ -49,11 +44,14 @@ static void prv_handleResponse(lwm2m_server_t * bootstrapServer,
     }
 }
 
-static void prv_handleBootstrapReply(lwm2m_transaction_t * transaction,
+static void prv_handleBootstrapReply(lwm2m_context_t * contextP,
+                                     lwm2m_transaction_t * transaction,
                                      void * message)
 {
     lwm2m_server_t * bootstrapServer = (lwm2m_server_t *)transaction->userData;
     coap_packet_t * coapMessage = (coap_packet_t *)message;
+
+    (void)contextP; /* unused */
 
     LOG("Entering");
 
@@ -93,21 +91,6 @@ static void prv_requestBootstrap(lwm2m_context_t * context,
         return;
     }
     query_length += res;
-#if SIERRA
-    if (lwm2mcore_IsEdmEnabled())
-    {
-        // Add a query parameter indicating that the device supports EDM. This tells the
-        // BootStrap server to provision the EDM server credentials to the device.
-        res = utils_stringCopy(query + query_length, PRV_QUERY_BUFFER_LENGTH - query_length,
-                               QUERY_DELIMITER QUERY_EDM QUERY_EDM_VALUE);
-        if (res < 0)
-        {
-            bootstrapServer->status = STATE_BS_FAILING;
-            return;
-        }
-        query_length += res;
-    }
-#endif
 
     if (bootstrapServer->sessionH == NULL)
     {
@@ -127,7 +110,6 @@ static void prv_requestBootstrap(lwm2m_context_t * context,
             return;
         }
 
-        LOG_ARG("BS query '%s' len %d", query, query_length);
         coap_set_header_uri_path(transaction->message, "/"URI_BOOTSTRAP_SEGMENT);
         coap_set_header_uri_query(transaction->message, query);
         transaction->callback = prv_handleBootstrapReply;
@@ -180,7 +162,7 @@ void bootstrap_step(lwm2m_context_t * contextP,
             break;
 
         case STATE_BS_INITIATED:
-            lwm2mcore_DeleteRegistrationID(-1);
+            // waiting
             break;
 
         case STATE_BS_PENDING:
@@ -237,10 +219,6 @@ uint8_t bootstrap_handleFinish(lwm2m_context_t * context,
         {
             LOG("Bootstrap server status changed to STATE_BS_FINISHING");
             bootstrapServer->status = STATE_BS_FINISHING;
-#if SIERRA
-            /* Notify that the bootstrap is finishing */
-            smanager_SendSessionEvent(EVENT_TYPE_BOOTSTRAP, EVENT_STATUS_FINISHING, NULL);
-#endif
             return COAP_204_CHANGED;
         }
         else
@@ -392,78 +370,6 @@ static void prv_tagAllServer(lwm2m_context_t * contextP,
     }
 }
 
-#if SIERRA
-#define CODE_TO_STRING(X)   #X
-
-static const char* prv_status_to_string(int status)
-{
-    const char *str;
-
-    if (status == COAP_NO_ERROR)
-    {
-        str = CODE_TO_STRING(COAP_NO_ERROR);
-    }
-    else if (status == COAP_IGNORE)
-    {
-        str = CODE_TO_STRING(COAP_IGNORE);
-    }
-    else if (status == COAP_201_CREATED)
-    {
-        str = CODE_TO_STRING(COAP_201_CREATED);
-    }
-    else if (status == COAP_202_DELETED)
-    {
-        str = CODE_TO_STRING(COAP_202_DELETED);
-    }
-    else if (status == COAP_204_CHANGED)
-    {
-        str = CODE_TO_STRING(COAP_204_CHANGED);
-    }
-    else if (status == COAP_205_CONTENT)
-    {
-        str = CODE_TO_STRING(COAP_205_CONTENT);
-    }
-    else if (status == COAP_400_BAD_REQUEST)
-    {
-        str = CODE_TO_STRING(COAP_400_BAD_REQUEST);
-    }
-    else if (status == COAP_401_UNAUTHORIZED)
-    {
-        str = CODE_TO_STRING(COAP_401_UNAUTHORIZED);
-    }
-    else if (status == COAP_404_NOT_FOUND)
-    {
-        str = CODE_TO_STRING(COAP_404_NOT_FOUND);
-    }
-    else if (status == COAP_405_METHOD_NOT_ALLOWED)
-    {
-        str = CODE_TO_STRING(COAP_405_METHOD_NOT_ALLOWED);
-    }
-    else if (status == COAP_406_NOT_ACCEPTABLE)
-    {
-        str = CODE_TO_STRING(COAP_406_NOT_ACCEPTABLE);
-    }
-    else if (status == COAP_500_INTERNAL_SERVER_ERROR)
-    {
-        str = CODE_TO_STRING(COAP_500_INTERNAL_SERVER_ERROR);
-    }
-    else if (status == COAP_501_NOT_IMPLEMENTED)
-    {
-        str = CODE_TO_STRING(COAP_501_NOT_IMPLEMENTED);
-    }
-    else if (status == COAP_503_SERVICE_UNAVAILABLE)
-    {
-        str = CODE_TO_STRING(COAP_503_SERVICE_UNAVAILABLE);
-    }
-    else
-    {
-        str = "";
-    }
-
-    return str;
-}
-#endif /* SIERRA */
-
 uint8_t bootstrap_handleCommand(lwm2m_context_t * contextP,
                                 lwm2m_uri_t * uriP,
                                 lwm2m_server_t * serverP,
@@ -569,10 +475,6 @@ uint8_t bootstrap_handleCommand(lwm2m_context_t * contextP,
             }
             else
             {
-#if SIERRA
-                LOG_ARG ("DELETE / %d / %d / %d",
-                        uriP->objectId, uriP->instanceId, uriP->resourceId);
-#endif /* SIERRA */
                 result = object_delete(contextP, uriP);
                 if (uriP->objectId == LWM2M_SECURITY_OBJECT_ID
                  && result == COAP_202_DELETED)
@@ -607,9 +509,6 @@ uint8_t bootstrap_handleCommand(lwm2m_context_t * contextP,
         }
     }
     LOG_ARG("Server status: %s", STR_STATUS(serverP->status));
-#if SIERRA
-    LOG_ARG("%s", prv_status_to_string (result));
-#endif /* SIERRA */
 
     return result;
 }
@@ -632,8 +531,7 @@ uint8_t bootstrap_handleDeleteAll(lwm2m_context_t * contextP,
     {
         lwm2m_uri_t uri;
 
-        memset(&uri, 0, sizeof(lwm2m_uri_t));
-        uri.flag = LWM2M_URI_FLAG_OBJECT_ID;
+        LWM2M_URI_RESET(&uri);
         uri.objectId = objectP->objID;
 
         if (objectP->objID == LWM2M_SECURITY_OBJECT_ID)
@@ -650,7 +548,6 @@ uint8_t bootstrap_handleDeleteAll(lwm2m_context_t * contextP,
                 }
                 else
                 {
-                    uri.flag = LWM2M_URI_FLAG_OBJECT_ID | LWM2M_URI_FLAG_INSTANCE_ID;
                     uri.instanceId = instanceP->id;
                     result = object_delete(contextP, &uri);
                     instanceP = objectP->instanceList;
@@ -723,13 +620,16 @@ void lwm2m_set_bootstrap_callback(lwm2m_context_t * contextP,
     contextP->bootstrapUserData = userData;
 }
 
-static void prv_resultCallback(lwm2m_transaction_t * transacP,
+static void prv_resultCallback(lwm2m_context_t * contextP,
+                               lwm2m_transaction_t * transacP,
                                void * message)
 {
     bs_data_t * dataP = (bs_data_t *)transacP->userData;
     lwm2m_uri_t * uriP;
 
-    if (dataP->isUri == true)
+    (void)contextP; /* unused */
+
+    if (LWM2M_URI_IS_SET_OBJECT(&dataP->uri))
     {
         uriP = &dataP->uri;
     }
@@ -778,11 +678,10 @@ int lwm2m_bootstrap_delete(lwm2m_context_t * contextP,
     }
     if (uriP == NULL)
     {
-        dataP->isUri = false;
+        LWM2M_URI_RESET(&dataP->uri);
     }
     else
     {
-        dataP->isUri = true;
         memcpy(&dataP->uri, uriP, sizeof(lwm2m_uri_t));
     }
     dataP->callback = contextP->bootstrapCallback;
@@ -826,7 +725,6 @@ int lwm2m_bootstrap_write(lwm2m_context_t * contextP,
         transaction_free(transaction);
         return COAP_500_INTERNAL_SERVER_ERROR;
     }
-    dataP->isUri = true;
     memcpy(&dataP->uri, uriP, sizeof(lwm2m_uri_t));
     dataP->callback = contextP->bootstrapCallback;
     dataP->userData = contextP->bootstrapUserData;
@@ -857,7 +755,7 @@ int lwm2m_bootstrap_finish(lwm2m_context_t * contextP,
         transaction_free(transaction);
         return COAP_500_INTERNAL_SERVER_ERROR;
     }
-    dataP->isUri = false;
+    LWM2M_URI_RESET(&dataP->uri);
     dataP->callback = contextP->bootstrapCallback;
     dataP->userData = contextP->bootstrapUserData;
 

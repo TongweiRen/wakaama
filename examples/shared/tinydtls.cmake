@@ -50,7 +50,7 @@ if (NOT EXISTS ${TINYDTLS_SOURCES_GENERATED})
         )
 
     ExternalProject_Add_Step(external_tinydtls autoheader
-       COMMAND "autoheader"
+       COMMAND "autoheader" 
        ALWAYS 1
        WORKING_DIRECTORY "${TINYDTLS_SOURCES_DIR}"
        DEPENDERS configure
@@ -58,7 +58,7 @@ if (NOT EXISTS ${TINYDTLS_SOURCES_GENERATED})
     )
 
     ExternalProject_Add_Step(external_tinydtls autoconf
-       COMMAND "autoconf"
+       COMMAND "autoconf" 
        ALWAYS 1
        WORKING_DIRECTORY "${TINYDTLS_SOURCES_DIR}"
        DEPENDERS autoheader
